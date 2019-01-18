@@ -28,20 +28,44 @@ func main() {
 		log.Fatal("go.googlesource.com/go not found")
 	}
 
+	repo := corpus.GitHub().Repo("golang", "go")
+	if repo == nil {
+		log.Fatal("github.com/golang/go not found")
+	}
+
 	issueHasCL := map[int32]bool{}
 	err = project.ForeachOpenCL(func(cl *maintner.GerritCL) error {
+		switch cl.Status {
+		case "merged", "abandoned":
+			return nil
+		}
+		hasRef := false
 		for _, ref := range cl.GitHubIssueRefs {
-			issueHasCL[ref.Number] = true
+			if ref.Repo == repo {
+				hasRef = true
+				break
+			}
+		}
+		if !hasRef {
+			return nil
+		}
+		if len(cl.Metas) >= 1 {
+			meta := cl.Metas[len(cl.Metas)-1]
+			for _, vote := range meta.LabelVotes()["Code-Review"] {
+				if vote == -2 {
+					return nil
+				}
+			}
+		}
+		for _, ref := range cl.GitHubIssueRefs {
+			if ref.Repo == repo {
+				issueHasCL[ref.Number] = true
+			}
 		}
 		return nil
 	})
 	if err != nil {
 		log.Fatal(err)
-	}
-
-	repo := corpus.GitHub().Repo("golang", "go")
-	if repo == nil {
-		log.Fatal("github.com/golang/go not found")
 	}
 
 	w := csv.NewWriter(os.Stdout)
@@ -64,7 +88,7 @@ func main() {
 		when := ""
 		for _, l := range i.Labels {
 			switch l.Name {
-			case "WaitingForInfo":
+			case "WaitingForInfo", "Proposal-Hold":
 				if state != "closed" {
 					state = "waiting"
 				}
