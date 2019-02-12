@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 
 	"golang.org/x/build/maintner"
 	"golang.org/x/build/maintner/godata"
@@ -126,7 +127,18 @@ func main() {
 			}
 		}
 
-		return w.Write([]string{number, updated, state, when, i.Title})
+		var who strings.Builder
+		for _, a := range i.Assignees {
+			if a.Login == "" {
+				continue
+			}
+			if who.Len() > 0 {
+				who.WriteString(",")
+			}
+			who.WriteString(a.Login)
+		}
+
+		return w.Write([]string{number, updated, state, when, who.String(), i.Title})
 	})
 	if err != nil {
 		log.Fatal(err)
