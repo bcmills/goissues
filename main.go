@@ -18,6 +18,30 @@ import (
 	"golang.org/x/build/maintner/godata"
 )
 
+// GitHub label IDs.
+const (
+	go2ID                = 150880249
+	helpWantedID         = 150880243
+	needsDecisionID      = 373401956
+	needsFixID           = 373399998
+	needsInvestigationID = 373402289
+	proposalID           = 236419512
+	releaseBlockerID     = 626114820
+	soonID               = 936464699
+	waitingForInfoID     = 357033853
+	frozenDueToAgeID     = 398069301
+)
+
+// GitHub Milestone numbers for the golang/go repo.
+const (
+	unplannedMilestone  = 6
+	unreleasedMilestone = 22
+	proposalMilestone   = 30
+	go2Milestone        = 72
+	gccgoMilestone      = 23
+	gollvmMilestone     = 100
+)
+
 func main() {
 	corpus, err := godata.Get(context.Background())
 	if err != nil {
@@ -72,7 +96,7 @@ func main() {
 	w := csv.NewWriter(os.Stdout)
 
 	err = repo.ForeachIssue(func(i *maintner.GitHubIssue) error {
-		if i.NotExist || i.PullRequest {
+		if i.NotExist || i.PullRequest || (i.Locked && i.HasLabelID(frozenDueToAgeID)) {
 			return nil
 		}
 
@@ -80,29 +104,58 @@ func main() {
 		updated := i.Updated.Format("2006-01-02")
 
 		state := "open"
-		if i.Closed {
+		switch {
+		case i.Closed:
 			state = "closed"
-		} else if issueHasCL[i.Number] {
+		case i.Locked:
+			state = "locked"
+		case issueHasCL[i.Number]:
 			state = "pending"
 		}
 
 		when := ""
+		if i.Milestone != nil {
+			switch i.Milestone.Number {
+			case unplannedMilestone:
+				when = "unplanned"
+			case unreleasedMilestone:
+				when = "unreleased"
+			case proposalMilestone:
+				when = "proposal"
+			case go2Milestone:
+				when = "go2"
+			case gccgoMilestone:
+				when = "gccgo"
+			case gollvmMilestone:
+				when = "gollvm"
+			}
+		}
+
 		for _, l := range i.Labels {
 			switch l.Name {
 			case "WaitingForInfo", "Proposal-Hold":
-				if state != "closed" {
+				switch state {
+				case "", "deciding":
 					state = "waiting"
 				}
 			case "NeedsDecision":
-				if state != "closed" && state != "waiting" {
+				switch state {
+				case "":
 					state = "deciding"
 				}
 
+			case "Soon":
+				when = "soon"
 			case "release-blocker":
-				if i.Milestone != nil {
-					when = i.Milestone.Title
-				} else {
-					when = "release"
+				switch when {
+				case "", "early", "feature", "test", "doc":
+					if when != "soon" {
+						if i.Milestone != nil {
+							when = i.Milestone.Title
+						} else {
+							when = "release"
+						}
+					}
 				}
 			case "early-in-cycle":
 				switch when {
