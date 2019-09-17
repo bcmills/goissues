@@ -19,20 +19,33 @@ import (
 )
 
 // GitHub label IDs.
+//
+// Extract using:
+// 	curl -sn https://api.github.com/repos/golang/go/labels/$LABELNAME | jq .id
 const (
 	go2ID                = 150880249
+	documentationID      = 150880209
+	earlyInCycleID       = 626114143
+	featureRequestID     = 373540105
 	helpWantedID         = 150880243
 	needsDecisionID      = 373401956
 	needsFixID           = 373399998
 	needsInvestigationID = 373402289
+	performanceID        = 150880191
 	proposalID           = 236419512
+	proposalHoldID       = 477156222
 	releaseBlockerID     = 626114820
 	soonID               = 936464699
+	testingID            = 150880205
+	toolSpeedID          = 358732225
 	waitingForInfoID     = 357033853
 	frozenDueToAgeID     = 398069301
 )
 
 // GitHub Milestone numbers for the golang/go repo.
+//
+// Extract using:
+// 	curl -sn https://api.github.com/repos/golang/go/milestones | jq ".[] | select(.title == \"$MILESTONE\") | .id"
 const (
 	unplannedMilestone  = 6
 	unreleasedMilestone = 22
@@ -103,21 +116,23 @@ func main() {
 		number := strconv.FormatInt(int64(i.Number), 10)
 		updated := i.Updated.Format("2006-01-02")
 
-		state := "open"
+		state := ""
 		switch {
 		case i.Closed:
 			state = "closed"
 		case i.Locked:
 			state = "locked"
-		case issueHasCL[i.Number]:
-			state = "pending"
 		}
 
 		when := ""
 		if i.Milestone != nil {
 			switch i.Milestone.Number {
 			case unplannedMilestone:
-				when = "unplanned"
+				if i.HasLabelID(helpWantedID) {
+					when = "help"
+				} else {
+					when = "unplanned"
+				}
 			case unreleasedMilestone:
 				when = "unreleased"
 			case proposalMilestone:
@@ -132,51 +147,62 @@ func main() {
 		}
 
 		for _, l := range i.Labels {
-			switch l.Name {
-			case "WaitingForInfo", "Proposal-Hold":
+			switch l.ID {
+			case waitingForInfoID, proposalHoldID:
 				switch state {
 				case "", "deciding":
 					state = "waiting"
 				}
-			case "NeedsDecision":
+			case needsDecisionID:
 				switch state {
 				case "":
 					state = "deciding"
 				}
 
-			case "Soon":
+			case soonID:
 				when = "soon"
-			case "release-blocker":
+			case releaseBlockerID:
 				switch when {
-				case "", "early", "feature", "test", "doc":
-					if when != "soon" {
-						if i.Milestone != nil {
-							when = i.Milestone.Title
-						} else {
-							when = "release"
-						}
+				case "", "early", "feature", "performance", "test", "doc":
+					if i.Milestone != nil {
+						when = i.Milestone.Title
+					} else {
+						when = "release"
 					}
 				}
-			case "early-in-cycle":
+			case earlyInCycleID:
 				switch when {
-				case "", "feature", "test", "doc":
+				case "", "feature", "performance", "test", "doc":
 					when = "early"
 				}
-			case "FeatureRequest":
+			case featureRequestID:
 				switch when {
-				case "", "test", "doc":
+				case "", "performance", "test", "doc":
 					when = "feature"
 				}
-			case "Testing":
+			case performanceID, toolSpeedID:
+				switch when {
+				case "", "test", "doc":
+					when = "performance"
+				}
+			case testingID:
 				switch when {
 				case "", "doc":
 					when = "test"
 				}
-			case "Documentation":
+			case documentationID:
 				switch when {
 				case "":
 					when = "doc"
 				}
+			}
+		}
+
+		if state == "" {
+			if issueHasCL[i.Number] {
+				state = "pending"
+			} else {
+				state = "open"
 			}
 		}
 
